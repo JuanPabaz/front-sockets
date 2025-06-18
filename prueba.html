@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sopa de Letras WebSocket</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f2f2f2;
+      padding: 20px;
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(20, 30px);
+      grid-auto-rows: 30px;
+      margin-top: 20px;
+      justify-content: center;
+    }
+    .cell {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #ccc;
+      line-height: 28px;
+      text-align: center;
+      background: #fff;
+      cursor: pointer;
+      font-weight: bold;
+      user-select: none;
+    }
+    .cell.highlight {
+      background: yellow;
+    }
+    .cell.found {
+      background: #aaffaa;
+    }
+    #log {
+      white-space: pre-wrap;
+      background: #eee;
+      padding: 10px;
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    #word-list {
+      margin: 20px auto;
+      max-width: 500px;
+      text-align: left;
+    }
+    .word-item {
+      padding: 5px;
+      margin: 2px;
+      background: #eee;
+    }
+    .word-item.found {
+      text-decoration: line-through;
+      color: #888;
+    }
+    .controls {
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sopa de Letras</h1>
+  <div class="controls">
+    <input id="username" placeholder="Nombre de jugador" />
+    <button onclick="connect()">Conectar</button>
+    <br /><br />
+    <input id="message" placeholder="Ingresa palabra o cantidad" />
+    <button onclick="sendMessage()">Enviar</button>
+    <button onclick="validateSelection()" id="validateBtn" disabled>Validar selección</button>
+  </div>
+  <div class="timer" id="timer">01:00</div>
+  <div id="board"></div>
+  <div id="word-list"></div>
+  <div id="log"></div>
+
+  <script>
+    let socket;
+    let boardData = [];
+    let wordsToFind = [];
+    let foundWords = [];
+    let selectedCells = [];
+    let timeLeft = 1 * 60; // 5 minutos en segundos
+    let timerInterval;
+    let gameActive = false;
+
+    function connect() {
+      const username = document.getElementById("username").value;
+      socket = new WebSocket("ws://localhost:32426/game/" + username);
+
+      socket.onopen = () => log("🟢 Conectado como " + username);
+      socket.onmessage = (e) => handleMessage(e.data);
+      socket.onclose = () => log("🔴 Desconectado");
+      socket.onerror = (e) => log("⚠ Error: " + e);
+    }
+
+    function sendMessage() {
+      const msg = document.getElementById("message").value;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(msg);
+        log("📤 Tú: " + msg);
+        document.getElementById("message").value = "";
+      }
+    }
+
+  function handleMessage(message) {
+      log("📩 Servidor: " + message);
+
+      if (message.startsWith("BOARD:")) {
+        const boardContent = message.substring(6).trim();
+        const rows = boardContent.split("\n").filter(r => r.trim());
+        boardData = rows.map(row => row.trim().split(" ").filter(c => c));
+        drawBoard();
+      } 
+      else if (message.startsWith("WORDS:")) {
+        const wordsText = message.substring(6).trim();
+        wordsToFind = wordsText.split(",").map(w => w.trim().toUpperCase());
+        updateWordList();
+        document.getElementById("validateBtn").disabled = false;
+        document.getElementById("showAllBtn").disabled = false;
+      }
+      else if (message.startsWith("TIME:")) {
+        const minutes = parseInt(message.substring(5));
+        timeLeft = minutes * 60;
+        startTimer();
+        gameActive = true;
+      }
+      else if (message === "TIME_UP") {
+        endGame(false);
+      }
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      updateTimerDisplay();
+      
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        
+        if (timeLeft <= 0) {
+          endGame(false);
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const minutes = Math.floor(timeLeft / 60);
+      const seconds = timeLeft % 60;
+      const timerEl = document.getElementById("timer");
+      
+      timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      
+      // Cambiar colores según el tiempo restante
+      timerEl.className = "timer";
+      if (timeLeft <= 60) {
+        timerEl.classList.add("time-critical");
+      } else if (timeLeft <= 120) {
+        timerEl.classList.add("time-warning");
+      }
+    }
+
+    function endGame(success) {
+      gameActive = false;
+      clearInterval(timerInterval);
+      
+      if (success) {
+        document.getElementById("timer").textContent = "¡Ganaste!";
+      } else {
+        document.getElementById("timer").textContent = "¡Tiempo agotado!";
+      }
+      
+      // Deshabilitar interacciones
+      document.getElementById("validateBtn").disabled = true;
+      document.querySelectorAll(".cell").forEach(cell => {
+        cell.style.pointerEvents = "none";
+      });
+      
+      // Mostrar palabras no encontradas
+      const missingWords = wordsToFind.filter(word => !foundWords.includes(word));
+      if (missingWords.length > 0) {
+        log("⌛ Palabras no encontradas: " + missingWords.join(", "));
+      }
+    }
+
+    function drawBoard() {
+      const boardContainer = document.getElementById("board");
+      boardContainer.innerHTML = "";
+
+      boardData.forEach((row, i) => {
+        row.forEach((letter, j) => {
+          const cell = document.createElement("div");
+          cell.className = "cell";
+          cell.textContent = letter;
+          cell.dataset.row = i;
+          cell.dataset.col = j;
+          cell.onclick = () => toggleHighlight(cell);
+          boardContainer.appendChild(cell);
+        });
+      });
+    }
+
+    function toggleHighlight(cell) {
+      cell.classList.toggle("highlight");
+      
+      const row = parseInt(cell.dataset.row);
+      const col = parseInt(cell.dataset.col);
+      const pos = {row, col};
+      
+      const index = selectedCells.findIndex(p => p.row === row && p.col === col);
+      if (index === -1) {
+        selectedCells.push(pos);
+      } else {
+        selectedCells.splice(index, 1);
+      }
+    }
+
+    function validateSelection() {
+      if (selectedCells.length < 2) {
+        log("⚠ Selecciona al menos 2 letras para validar");
+        return;
+      }
+      
+      // Ordenar las celdas seleccionadas para determinar dirección
+      selectedCells.sort((a, b) => a.row - b.row || a.col - b.col);
+      
+      // Determinar si es horizontal, vertical o inválido
+      let isHorizontal = true;
+      let isVertical = true;
+      
+      for (let i = 1; i < selectedCells.length; i++) {
+        // Verificar horizontal (misma fila, columnas consecutivas)
+        if (selectedCells[i].row !== selectedCells[0].row || 
+            selectedCells[i].col !== selectedCells[i-1].col + 1) {
+          isHorizontal = false;
+        }
+        
+        // Verificar vertical (misma columna, filas consecutivas)
+        if (selectedCells[i].col !== selectedCells[0].col || 
+            selectedCells[i].row !== selectedCells[i-1].row + 1) {
+          isVertical = false;
+        }
+      }
+      
+      if (!isHorizontal && !isVertical) {
+        log("⚠ La selección no es válida (debe ser horizontal o vertical)");
+        resetSelection();
+        return;
+      }
+      
+      // Construir la palabra seleccionada
+      let selectedWord = "";
+      for (const cell of selectedCells) {
+        selectedWord += boardData[cell.row][cell.col];
+      }
+      
+      // Verificar si la palabra está en la lista
+      const wordIndex = wordsToFind.indexOf(selectedWord);
+      if (wordIndex !== -1 && !foundWords.includes(selectedWord)) {
+        foundWords.push(selectedWord);
+        log(`✅ ¡Encontraste la palabra "${selectedWord}"!`);
+        
+        // Marcar celdas como encontradas
+        selectedCells.forEach(cell => {
+          const cellElement = document.querySelector(`.cell[data-row="${cell.row}"][data-col="${cell.col}"]`);
+          cellElement.classList.remove("highlight");
+          cellElement.classList.add("found");
+        });
+        
+        updateWordList();
+        resetSelection();
+        
+        // Verificar si se encontraron todas
+        if (foundWords.length === wordsToFind.length) {
+          log("🎉 ¡Felicidades! ¡Has encontrado todas las palabras!");
+        }
+      } else if (foundWords.includes(selectedWord)) {
+        log(`⚠ La palabra "${selectedWord}" ya fue encontrada`);
+        resetSelection();
+      } else {
+        log(`❌ "${selectedWord}" no está en la lista de palabras`);
+        resetSelection();
+      }
+    }
+    
+    function resetSelection() {
+      selectedCells = [];
+      document.querySelectorAll(".cell.highlight").forEach(cell => {
+        cell.classList.remove("highlight");
+      });
+    }
+    
+    function updateWordList() {
+      const wordList = document.getElementById("word-list");
+      wordList.innerHTML = "<h3>Palabras a encontrar:</h3>";
+      
+      wordsToFind.forEach(word => {
+        const wordEl = document.createElement("div");
+        wordEl.className = `word-item ${foundWords.includes(word) ? "found" : ""}`;
+        wordEl.textContent = word;
+        wordList.appendChild(wordEl);
+      });
+    }
+    
+    function showAllWords() {
+      // Esta función revelaría todas las palabras (para desarrollo o ayuda)
+      wordsToFind.forEach(word => {
+        if (!foundWords.includes(word)) {
+          foundWords.push(word);
+          // Aquí deberías implementar la lógica para resaltar la palabra en el tablero
+        }
+      });
+      updateWordList();
+      log("Se han mostrado todas las palabras");
+    }
+
+    function log(message) {
+      const logEl = document.getElementById("log");
+      logEl.textContent += message + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    
+    // Permitir enviar con Enter
+    document.getElementById("message").addEventListener("keyup", function(event) {
+      if (event.key === "Enter") {
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>
