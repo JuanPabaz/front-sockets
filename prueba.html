@@ -3,61 +3,173 @@
 <head>
   <meta charset="UTF-8" />
   <title>Sopa de Letras WebSocket</title>
-  <style>
+   <style>
     body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #f2f2f2;
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(to right, #dbeafe, #f0f9ff);
+      margin: 0;
       padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
+
+    h1 {
+      margin-bottom: 10px;
+      color: #1e3a8a;
+    }
+
+    .controls {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      padding: 20px;
+      margin-bottom: 20px;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    input, button {
+      font-family: 'Poppins', sans-serif;
+      padding: 10px 14px;
+      margin: 6px 4px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px #93c5fd;
+    }
+
+    button {
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover:not(:disabled) {
+      background-color: #2563eb;
+    }
+
+    button:disabled {
+      background-color: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    #timer {
+      font-size: 20px;
+      font-weight: bold;
+      color: #1e40af;
+      margin: 10px 0;
+      padding: 6px 12px;
+      background: #e0e7ff;
+      border-radius: 8px;
+    }
+
+    #timer.time-warning {
+      background: #facc15;
+      color: #92400e;
+    }
+
+    #timer.time-critical {
+      background: #f87171;
+      color: #7f1d1d;
+    }
+
     #board {
       display: grid;
       grid-template-columns: repeat(20, 30px);
       grid-auto-rows: 30px;
+      gap: 2px;
       margin-top: 20px;
-      justify-content: center;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
+
     .cell {
       width: 28px;
       height: 28px;
+      background: #f9fafb;
       border: 1px solid #ccc;
       line-height: 28px;
       text-align: center;
-      background: #fff;
-      cursor: pointer;
       font-weight: bold;
+      color: #111827;
+      cursor: pointer;
       user-select: none;
+      border-radius: 4px;
+      transition: background-color 0.2s;
     }
+
+    .cell:hover {
+      background-color: #dbeafe;
+    }
+
     .cell.highlight {
-      background: yellow;
+      background: #fde68a;
     }
+
     .cell.found {
-      background: #aaffaa;
+      background: #86efac;
+      color: #065f46;
     }
-    #log {
-      white-space: pre-wrap;
-      background: #eee;
-      padding: 10px;
-      margin-top: 20px;
-      max-height: 200px;
-      overflow-y: auto;
-    }
+
     #word-list {
-      margin: 20px auto;
-      max-width: 500px;
+      background: white;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 10px;
+      max-width: 600px;
+      width: 100%;
       text-align: left;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
+
+    #word-list h3 {
+      margin-top: 0;
+      color: #1f2937;
+    }
+
     .word-item {
-      padding: 5px;
-      margin: 2px;
-      background: #eee;
+      padding: 6px 10px;
+      background: #f3f4f6;
+      margin: 4px 0;
+      border-radius: 6px;
+      transition: background 0.2s;
     }
+
     .word-item.found {
       text-decoration: line-through;
-      color: #888;
+      background: #d1fae5;
+      color: #047857;
     }
-    .controls {
-      margin: 20px 0;
+
+    #log {
+      background: #f1f5f9;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 20px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 14px;
+      color: #374151;
+      text-align: left;
+      white-space: pre-line;
+    }
+
+    @media (max-width: 600px) {
+      #board {
+        grid-template-columns: repeat(10, 28px);
+      }
     }
   </style>
 </head>
@@ -71,7 +183,7 @@
     <button onclick="sendMessage()">Enviar</button>
     <button onclick="validateSelection()" id="validateBtn" disabled>Validar selección</button>
   </div>
-  <div class="timer" id="timer">01:00</div>
+  <div class="timer" id="timer">05:00</div>
   <div id="board"></div>
   <div id="word-list"></div>
   <div id="log"></div>
@@ -82,7 +194,7 @@
     let wordsToFind = [];
     let foundWords = [];
     let selectedCells = [];
-    let timeLeft = 1 * 60; // 5 minutos en segundos
+    let timeLeft = 5 * 60; // 5 minutos en segundos
     let timerInterval;
     let gameActive = false;
 
